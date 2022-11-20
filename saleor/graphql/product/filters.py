@@ -29,6 +29,8 @@ from ...product.models import (
     CollectionProduct,
     Product,
     ProductChannelListing,
+    ProductTag,
+    ProductTagProduct,
     ProductType,
     ProductVariant,
     ProductVariantChannelListing,
@@ -352,6 +354,14 @@ def filter_products_by_stock_availability(qs, stock_availability, channel_slug):
     return qs
 
 
+def filter_products_by_product_tags(qs, product_tag_ids):
+    product_tags_products = ProductTagProduct.objects.filter(
+        product_tag_id__in=product_tag_ids
+    ).values("product_id")
+    return qs.filter(Exists(product_tags_products.filter(product_id=OuterRef("pk"))))
+
+
+
 def _filter_attributes(qs, _, value):
     if value:
         value_list = []
@@ -401,6 +411,13 @@ def filter_product_types(qs, _, value):
     )
     return qs.filter(product_type_id__in=product_type_pks)
 
+def filter_product_tags(qs,_,value):
+    if value:
+        _, product_tag_pks = resolve_global_ids_to_primary_keys(
+            value, product_types.ProductTag
+        )
+        qs = filter_products_by_product_tags(qs, product_tag_pks)
+    return qs
 
 def filter_has_category(qs, _, value):
     return qs.filter(category__isnull=not value)
@@ -618,6 +635,7 @@ class ProductFilter(MetadataFilterBase):
         help_text="Filter by when was the most recent update.",
     )
     product_types = GlobalIDMultipleChoiceFilter(method=filter_product_types)
+    product_tags = GlobalIDMultipleChoiceFilter(method=filter_product_tags)
     stocks = ObjectTypeFilter(input_class=ProductStockFilterInput, method=filter_stocks)
     search = django_filters.CharFilter(method=filter_search)
     gift_card = django_filters.BooleanFilter(
@@ -758,6 +776,28 @@ class ProductTypeFilter(MetadataFilterBase):
         return queryset.filter(name_slug_qs)
 
 
+class ProductTagFilter(MetadataFilterBase):
+    search = django_filters.CharFilter(method="product_tags_filter_search")
+    ids = GlobalIDMultipleChoiceFilter(field_name="id")
+    is_active = django_filters.BooleanFilter()
+
+    class Meta:
+        model = ProductTag
+        fields = ["search", "is_active"]
+
+    def product_tags_filter_search(self, queryset, _name, value):
+        if not value:
+            return queryset
+        name_slug_qs = Q(name__ilike=value) | Q(slug__ilike=value)
+        return queryset.filter(name_slug_qs)
+
+    def product_tags_filter_is_active(self, queryset, _name, value):
+        if value not in (True, False):
+            return queryset
+        return queryset.filter(is_active=value)
+
+
+
 class ProductFilterInput(ChannelFilterInputObjectType):
     class Meta:
         filterset_class = ProductFilter
@@ -781,3 +821,7 @@ class CategoryFilterInput(FilterInputObjectType):
 class ProductTypeFilterInput(FilterInputObjectType):
     class Meta:
         filterset_class = ProductTypeFilter
+
+class ProductTagFilterInput(FilterInputObjectType):
+    class Meta:
+        filterset_class = ProductTagFilter

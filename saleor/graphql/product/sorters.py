@@ -63,6 +63,26 @@ class CategorySortField(graphene.Enum):
         return queryset.annotate(subcategory_count=Count("children__id"))
 
 
+class ProductTagSortField(graphene.Enum):
+    NAME = ["name", "slug"]
+    PRODUCT_COUNT = ["product_count", "name", "slug"]
+
+    @property
+    def description(self):
+        # pylint: disable=no-member
+        if self in [
+            ProductTagSortField.NAME,
+            ProductTagSortField.PRODUCT_COUNT,
+        ]:
+            sort_name = self.name.lower().replace("_", " ")
+            return f"Sort categories by {sort_name}."
+        raise ValueError("Unsupported enum value: %s" % self.value)
+
+    @staticmethod
+    def qs_with_product_count(queryset: QuerySet, **_kwargs) -> QuerySet:
+        return queryset.annotate(product_count=Count("producttagsproduct__id"))
+
+
 class CategorySortingInput(ChannelSortInputObjectType):
     class Meta:
         sort_enum = CategorySortField
@@ -299,3 +319,9 @@ class ProductTypeSortingInput(SortInputObjectType):
     class Meta:
         sort_enum = ProductTypeSortField
         type_name = "product types"
+
+
+class ProductTagSortingInput(SortInputObjectType):
+    class Meta:
+        sort_enum = ProductTagSortField
+        type_name = "product tags"

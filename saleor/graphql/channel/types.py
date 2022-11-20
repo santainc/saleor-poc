@@ -40,6 +40,7 @@ class ChannelContextTypeForObjectType(graphene.ObjectType):
         attname, default_value, root: ChannelContext, info, **args
     ):
         resolver = get_default_resolver()
+        print("resolver_with_context", attname, default_value, root, info, **args)
         return resolver(attname, default_value, root.node, info, **args)
 
     @staticmethod

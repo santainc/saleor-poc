@@ -39,8 +39,16 @@ from .filters import (
     ProductFilterInput,
     ProductTypeFilterInput,
     ProductVariantFilterInput,
+    ProductTagFilterInput,
 )
-from .mutations import ProductTypeCreate, ProductTypeDelete, ProductTypeUpdate
+from .mutations import (
+    ProductTypeCreate,
+    ProductTypeDelete,
+    ProductTypeUpdate,
+    ProductTagCreate,
+    ProductTagDelete,
+    ProductTagUpdate,
+)
 from .mutations.attributes import (
     ProductAttributeAssign,
     ProductAttributeAssignmentUpdate,
@@ -104,6 +112,9 @@ from .resolvers import (
     resolve_products,
     resolve_report_product_sales,
     resolve_variant_by_id,
+    resolve_product_tags,
+    resolve_product_tag_by_id,
+    resolve_product_tag_by_slug,
 )
 from .sorters import (
     CategorySortingInput,
@@ -112,6 +123,7 @@ from .sorters import (
     ProductOrderField,
     ProductTypeSortingInput,
     ProductVariantSortingInput,
+    ProductTagSortingInput,
 )
 from .types import (
     Category,
@@ -126,6 +138,8 @@ from .types import (
     ProductTypeCountableConnection,
     ProductVariant,
     ProductVariantCountableConnection,
+    ProductTag,
+    ProductTagCountableConnection,
 )
 
 
@@ -295,6 +309,32 @@ class ProductQueries(graphene.ObjectType):
         ],
     )
 
+    product_tag = graphene.Field(
+        ProductTag,
+        id=graphene.Argument(
+            graphene.ID,
+            description="ID of the product tag.",
+        ),
+        slug=graphene.Argument(graphene.String, description="Slug of the product tag."),
+        channel=graphene.String(
+            description="Slug of a channel for which the data should be returned."
+        ),
+        description=(
+            "Look up a product tag by ID. Requires one of the following permissions to "
+            "include the unpublished items: "
+            f"{', '.join([p.name for p in ALL_PRODUCTS_PERMISSIONS])}."
+        ),
+    )
+    product_tags = FilterConnectionField(
+        ProductTagCountableConnection,
+        filter=ProductTagFilterInput(description="Filtering options for product tags"),
+        channel=graphene.String(
+            description="Slug of a channel for which the data should be returned."
+        ),
+        sort_by=ProductTagSortingInput(description="Sort product tags."),
+        description="List of the shop's product tags.",
+    )
+
     @staticmethod
     def resolve_categories(_root, info: graphene.ResolveInfo, *, level=None, **kwargs):
         qs = resolve_categories(info, level=level)
@@ -353,6 +393,49 @@ class ProductQueries(graphene.ObjectType):
         kwargs["channel"] = channel
         qs = filter_connection_queryset(qs, kwargs)
         return create_connection_slice(qs, info, kwargs, CollectionCountableConnection)
+
+    @staticmethod
+    @traced_resolver
+    def resolve_product_tag(
+        _root, info: graphene.ResolveInfo, *, id=None, slug=None, channel=None
+    ):
+
+        validate_one_of_args_is_in_query("id", id, "slug", slug)
+        requestor = get_user_or_app_from_context(info.context)
+
+        has_required_permissions = has_one_of_permissions(
+            requestor, ALL_PRODUCTS_PERMISSIONS
+        )
+        if channel is None and not has_required_permissions:
+            channel = get_default_channel_slug_or_graphql_error()
+        if id:
+            _, id = from_global_id_or_error(id, ProductTag)
+            product_tag = resolve_product_tag_by_id(info, id, channel, requestor)
+        else:
+            product_tag = resolve_product_tag_by_slug(
+                info, slug=slug, channel_slug=channel, requestor=requestor
+            )
+        return (
+            ChannelContext(node=product_tag, channel_slug=channel)
+            if product_tag
+            else None
+        )
+
+    @staticmethod
+    def resolve_product_tags(
+        _root, info: graphene.ResolveInfo, *, channel=None, **kwargs
+    ):
+
+        requestor = get_user_or_app_from_context(info.context)
+        has_required_permissions = has_one_of_permissions(
+            requestor, ALL_PRODUCTS_PERMISSIONS
+        )
+        if channel is None and not has_required_permissions:
+            channel = get_default_channel_slug_or_graphql_error()
+        qs = resolve_product_tags(info, channel)
+        kwargs["channel"] = channel
+        qs = filter_connection_queryset(qs, kwargs)
+        return create_connection_slice(qs, info, kwargs, ProductCountableConnection)
 
     @staticmethod
     def resolve_digital_content(_root, _info: graphene.ResolveInfo, *, id):
@@ -544,6 +627,10 @@ class ProductMutations(graphene.ObjectType):
     product_type_update = ProductTypeUpdate.Field()
     product_type_reorder_attributes = ProductTypeReorderAttributes.Field()
     product_reorder_attribute_values = ProductReorderAttributeValues.Field()
+
+    product_tag_create = ProductTagCreate.Field()
+    product_tag_delete = ProductTagDelete.Field()
+    product_tag_update = ProductTagUpdate.Field()
 
     digital_content_create = DigitalContentCreate.Field()
     digital_content_delete = DigitalContentDelete.Field()

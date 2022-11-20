@@ -16,4 +16,6 @@ from .products import (
     ProductTypeCountableConnection,
     ProductVariant,
     ProductVariantCountableConnection,
+    ProductTag,
+    ProductTagCountableConnection,
 )

@@ -12,6 +12,8 @@ from ....product.models import (
     Product,
     ProductChannelListing,
     ProductMedia,
+    ProductTag,
+    ProductTagProduct,
     ProductType,
     ProductVariant,
     ProductVariantChannelListing,
@@ -138,6 +140,36 @@ class ProductTypeByIdLoader(DataLoader):
             self.database_connection_name
         ).in_bulk(keys)
         return [product_types.get(product_type_id) for product_type_id in keys]
+
+
+class ProductTagByIdLoader(DataLoader):
+    context_key = "producttag_by_id"
+
+    def batch_load(self, keys):
+        product_tags = ProductTag.objects.using(self.database_connection_name).in_bulk(
+            keys
+        )
+        return [product_tags.get(key) for key in keys]
+
+
+class ProductTagByProductIdLoader(DataLoader):
+    context_key = "product_tag_by_id"
+
+    def batch_load(self, keys):
+        product_tags_to_products = ProductTagProduct.objects.using(
+            self.database_connection_name
+        ).filter(product_id__in=keys)
+        product_tags_map = defaultdict(list)
+        product_tags_loader = ProductTagByIdLoader(self.context)
+        for product_tag_to_product in product_tags_to_products.iterator():
+            product_tags_map[product_tag_to_product.product_id].append(
+                product_tag_to_product.product_tag
+            )
+        product_tags_loader.prime(
+            product_tag_to_product.product_tag.id, product_tag_to_product.product_tag
+        )
+        print(product_tags_map)
+        return [product_tags_map.get(product_tag_id, []) for product_tag_id in keys]
 
 
 class MediaByProductIdLoader(DataLoader):

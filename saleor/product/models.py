@@ -963,3 +963,68 @@ class CollectionTranslation(SeoModelTranslation):
             }
         )
         return translated_keys
+
+
+class ProductTagProduct(SortableModel):
+    product_tag = models.ForeignKey(
+        "ProductTag", related_name="producttags", on_delete=models.CASCADE
+    )
+
+    product = models.ForeignKey(
+        Product, related_name="producttagsproduct", on_delete=models.CASCADE
+    )
+
+    class Meta:
+        unique_together = (("product_tag", "product"),)
+
+    def get_ordering_queryset(self):
+        return self.product.producttagsproduct.all()
+
+
+class ProductTagsQueryset(models.QuerySet):
+    def published(self, channel_slug: str):
+        today = datetime.datetime.now(pytz.UTC)
+        return self.filter(
+            Q(products__channel_listings__published_at__lte=today)
+            | Q(products__channel_listings__published_at__isnull=True),
+            products__channel_listings__channel__slug=str(channel_slug),
+            products__channel_listings__channel__is_active=True,
+            products__channel_listings__is_published=True,
+        )
+
+    def visible_to_user(self, requestor: Union["User", "App"], channel_slug: str):
+        if has_one_of_permissions(requestor, ALL_PRODUCTS_PERMISSIONS):
+            if channel_slug:
+                return self.filter(
+                    products__channel_listings__channel__slug=str(channel_slug)
+                )
+            return self.all()
+        return self.published(channel_slug)
+
+
+class ProductTag(ModelWithMetadata):
+    name = models.CharField(max_length=250)
+    slug = models.SlugField(max_length=255, unique=True, allow_unicode=True)
+    is_active = models.BooleanField(default=False)
+    products = models.ManyToManyField(
+        Product,
+        blank=True,
+        related_name="producttags",
+        through=ProductTagProduct,
+        through_fields=("product_tag", "product"),
+    )
+
+    def get_global_id(self):
+        return graphene.Node.to_global_id("ProductTag", self.id)
+
+
+    objects = models.Manager.from_queryset(ProductTagsQueryset)()
+
+    def __repr__(self):
+        class_ = type(self)
+        return "%s(pk=%r, name=%r, slug=%r)" % (
+            class_.__name__,
+            self.pk,
+            self.name,
+            self.slug,
+        )

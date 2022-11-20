@@ -80,6 +80,7 @@ from ...order.dataloaders import (
 )
 from ...product.dataloaders.products import (
     AvailableProductVariantsByProductIdAndChannel,
+    ProductTagByProductIdLoader,
     ProductVariantsByProductIdAndChannel,
 )
 from ...translations.fields import TranslationField
@@ -856,6 +857,10 @@ class Product(ChannelContextTypeWithMetadata, ModelObjectType):
         description="Whether the product is available for purchase."
     )
 
+    product_tags = NonNullList(
+        lambda: ProductTag, description=("List of product tags for the product")
+    )
+
     class Meta:
         default_resolver = ChannelContextType.resolver_with_context
         description = "Represents an individual item for sale in the storefront."
@@ -1097,6 +1102,12 @@ class Product(ChannelContextTypeWithMetadata, ModelObjectType):
     @staticmethod
     def resolve_images(root: ChannelContext[models.Product], info):
         return ImagesByProductIdLoader(info.context).load(root.node.id)
+
+
+    @staticmethod
+    def resolve_product_tags(root: ChannelContext[models.Product], info):
+        return ProductTagByProductIdLoader(info.context).load(root.node.id)
+
 
     @staticmethod
     def resolve_variants(root: ChannelContext[models.Product], info):
@@ -1791,3 +1802,68 @@ class ProductImage(graphene.ObjectType):
             .load((root.id, size, format))
             .then(_resolve_url)
         )
+
+
+@federated_entity("id channel")
+class ProductTag(ChannelContextTypeWithMetadata, ModelObjectType):
+    id = graphene.GlobalID(required=True)
+    name = graphene.String(required=True)
+    slug = graphene.String(required=True)
+    is_active = graphene.Boolean(required=True)
+    products = ConnectionField(
+        ProductCountableConnection,
+        channel=graphene.String(
+            description="Slug of a channel for which the data should be returned."
+        ),
+        description=(
+            "List of products in the category. Requires the following permissions to "
+            "include the unpublished items: "
+            f"{', '.join([p.name for p in ALL_PRODUCTS_PERMISSIONS])}."
+        ),
+    )
+
+    class Meta:
+        default_resolver = ChannelContextType.resolver_with_context
+        description = "Represents a tag matching specific products."
+        interfaces = [relay.Node, ObjectWithMetadata]
+        model = models.ProductTag
+
+    @staticmethod
+    def resolve_products(root: models.ProductTag, info, channel=None, **kwargs):
+        requestor = get_user_or_app_from_context(info.context)
+        if channel is None:
+            channel = get_default_channel_slug_or_graphql_error()
+        qs = root.products.visible_to_user(requestor, channel)  # type: ignore
+        qs = ChannelQsContext(qs=qs, channel_slug=channel)
+        kwargs["channel"] = channel
+        return create_connection_slice(qs, info, kwargs, ProductCountableConnection)
+
+
+    @staticmethod
+    def __resolve_references(roots: List["ProductTag"], info):
+        from ..resolvers import resolve_product_tags
+
+        channels = defaultdict(set)
+        roots_ids = []
+        for root in roots:
+            _, root_id = from_global_id_or_error(root.id, ProductTag, raise_error=True)
+            roots_ids.append(f"{root.channel}_{root_id}")
+            channels[root.channel].add(root_id)
+
+        product_tags = {}
+        for channel, ids in channels.items():
+            queryset = resolve_product_tags(info, channel).qs.filter(id__in=ids)
+
+            for product_tags in queryset:
+                product_tags[f"{channel}_{product_tags.id}"] = ChannelContext(
+                    channel_slug=channel, node=product_tags
+                )
+
+        return [product_tags.get(root_id) for root_id in roots_ids]
+
+
+
+
+class ProductTagCountableConnection(CountableConnection):
+    class Meta:
+        node = ProductTag

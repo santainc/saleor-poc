@@ -52,6 +52,29 @@ def resolve_collections(info, channel_slug):
     return ChannelQsContext(qs=qs, channel_slug=channel_slug)
 
 
+def resolve_product_tag_by_id(_info, id, channel_slug, requestor):
+    return (
+        models.ProductTag.objects.visible_to_user(requestor, channel_slug=channel_slug)
+        .filter(id=id)
+        .first()
+    )
+
+
+def resolve_product_tag_by_slug(_info, slug, channel_slug, requestor):
+    return (
+        models.ProductTag.objects.visible_to_user(requestor, channel_slug)
+        .filter(slug=slug)
+        .first()
+    )
+
+
+def resolve_product_tags(info, channel_slug):
+    requestor = get_user_or_app_from_context(info.context)
+    qs = models.ProductTag.objects.visible_to_user(requestor, channel_slug)
+
+    return ChannelQsContext(qs=qs, channel_slug=channel_slug)
+
+
 def resolve_digital_content_by_id(id):
     return models.DigitalContent.objects.filter(pk=id).first()
 
