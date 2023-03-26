@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: saleor-poc
+  annotations:
+    github.com/project-slug: santainc/saleor-poc
+spec:
+  type: other
+  lifecycle: unknown
+  owner: bc
